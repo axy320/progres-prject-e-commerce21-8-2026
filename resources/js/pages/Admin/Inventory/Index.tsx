@@ -100,7 +100,7 @@ export default function InventoryIndex() {
                             Kelola Inventory
                         </h2>
                         <p className="text-sm text-vgs-silver-mid mt-1">
-                            {inventories?.total ?? 0} varian terkelola stoknya.
+                            {inventories?.total ?? 0} product terkelola stoknya.
                         </p>
                     </div>
                 </div>
@@ -109,7 +109,7 @@ export default function InventoryIndex() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                     <div className="p-5 rounded-2xl bg-vgs-black-surface border border-vgs-gray-border">
                         <p className="text-xs font-mono uppercase tracking-wider text-vgs-silver-muted">
-                            Total Varian
+                            Total Product
                         </p>
                         <p className="mt-2 text-2xl font-display font-bold text-vgs-silver-bright">
                             {stats?.total_variants ?? 0}
@@ -123,7 +123,7 @@ export default function InventoryIndex() {
                         <p className="mt-2 text-2xl font-display font-bold text-vgs-warning">
                             {stats?.low_stock ?? 0}
                         </p>
-                        <p className="mt-1 text-xs text-vgs-silver-muted">Di bawah ambang reorder</p>
+                        <p className="mt-1 text-xs text-vgs-silver-muted">Stock profuct mulai berkurang</p>
                     </div>
                     <div className="p-5 rounded-2xl bg-vgs-black-surface border border-vgs-gray-border">
                         <p className="text-xs font-mono uppercase tracking-wider text-vgs-silver-muted">

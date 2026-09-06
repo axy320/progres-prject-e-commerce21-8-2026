@@ -1,0 +1,235 @@
+====================================================================
+PROMPT: DIAGNOSA & PERBAIKAN -- FORM PRODUK GAGAL SUBMIT + FIELD
+STOK MASIH ADA DI CATALOG
+Vortix Gaming Store (VGS) -- Lanjutan CRUD Product & Inventory
+Kompatibel dipakai di: Antigravity, OpenCode, Copilot, atau AI
+coding assistant lain apapun -- ikuti instruksi ini apa adanya.
+====================================================================
+
+KONTEKS PROJECT
+--------------------------------------------------------------------
+Project Laravel 13 + Inertia 3 + React 19 + TypeScript + Tailwind
+CSS. Sistem role staf, CRUD Product, dan modul Inventory (tabel
+warehouses + inventories terpisah dari product_variants) SUDAH
+DIBANGUN sesuai BRIEF_BACKEND_INVENTORY.md dan
+CATATAN_INVENTORY.md yang seharusnya ada di root project -- BACA
+KEDUA FILE ITU DULU sebelum melakukan apapun.
+
+MASALAH YANG DILAPORKAN
+--------------------------------------------------------------------
+1. Di halaman Admin > Catalog > Tambah Produk, form varian produk
+   MASIH menampilkan kolom input "STOK" di samping SKU, Harga, dan
+   Harga Coret -- padahal field ini SEHARUSNYA SUDAH DIHAPUS karena
+   stok sekarang sepenuhnya dikelola lewat halaman Inventory yang
+   terpisah (fitur Inventory sendiri SUDAH BERFUNGSI dan sudah
+   bisa dipakai untuk menyesuaikan stok).
+
+2. Saat tombol "Simpan Produk" diklik di halaman Tambah Produk,
+   TIDAK TERJADI APA-APA -- tidak ada pesan error yang terlihat,
+   tidak ada redirect, tombol tidak menunjukkan hal yang jelas
+   terjadi. Produk TIDAK tersimpan ke database.
+
+DUGAAN AWAL (WAJIB DIVERIFIKASI, JANGAN LANGSUNG DIPERBAIKI TANPA
+DIBUKTIKAN DULU)
+--------------------------------------------------------------------
+Kedua masalah ini KEMUNGKINAN BESAR saling berkaitan: form React
+Tambah Produk kemungkinan adalah versi LAMA yang dibangun SEBELUM
+modul Inventory ada, sehingga masih mengirim field stock ke
+backend. Sementara itu, backend (StoreProductRequest atau
+ProductController) kemungkinan SUDAH DIUBAH mengikuti instruksi
+sebelumnya untuk tidak lagi menerima/memvalidasi field stock
+dengan cara tertentu -- menghasilkan MISMATCH antara apa yang
+dikirim frontend dan apa yang diharapkan backend, yang berujung
+pada validasi gagal tanpa pesan error yang terlihat dengan jelas.
+INI HANYA DUGAAN -- ikuti langkah diagnosa di bawah untuk
+membuktikan penyebab sebenarnya sebelum memperbaiki apapun.
+
+====================================================================
+LANGKAH DIAGNOSA -- WAJIB DIIKUTI URUT, JANGAN LOMPAT KE PERBAIKAN
+====================================================================
+
+LANGKAH 1 -- CEK BROWSER CONSOLE DAN NETWORK TAB
+Buka halaman Admin > Catalog > Tambah Produk di browser. Buka
+Developer Tools (F12), buka tab Console DAN tab Network. Isi form
+dengan data contoh yang lengkap (nama produk, minimal 1 gambar,
+minimal 1 varian dengan SKU dan harga), lalu klik "Simpan Produk".
+
+Amati dan laporkan:
+- Apakah ada error JavaScript berwarna merah muncul di tab Console?
+  Jika ada, salin PERSIS pesan errornya.
+- Di tab Network, apakah muncul request baru ke URL yang mengandung
+  "products" dengan method POST? Jika TIDAK ADA request yang
+  terkirim sama sekali, berarti masalahnya ada di JAVASCRIPT SISI
+  FRONTEND SEBELUM request terkirim (kemungkinan validasi frontend
+  gagal diam-diam, atau ada error yang menghentikan fungsi submit).
+  Jika ADA request yang terkirim, klik request itu dan lihat tab
+  Response -- catat status code-nya (200, 302, 422, 500, dst) dan
+  isi response-nya PERSIS.
+
+LANGKAH 2 -- CEK FILE FORM REACT YANG SEBENARNYA DIPAKAI
+Buka resources/js/pages/Admin/Product/Create.tsx (dan Edit.tsx jika
+ada) DAN cek juga apakah ada file terpisah
+resources/js/components/admin/ProductForm.tsx yang mungkin dipakai
+bersama oleh Create dan Edit. Cari SEMUA bagian yang menyebutkan
+kata "stock" (case-insensitive) -- baik di state form (useForm),
+di JSX (input field), maupun di fungsi apapun. LAPORKAN semua lokasi
+yang ditemukan dengan nomor baris dan potongan kodenya.
+
+LANGKAH 3 -- CEK VALIDASI BACKEND SAAT INI
+Buka app/Http/Requests/Admin/StoreProductRequest.php. Cari baris
+yang berkaitan dengan variants.*.stock atau field stock apapun.
+LAPORKAN apakah field ini:
+a. TIDAK ADA SAMA SEKALI di rules() -- berarti backend sudah tidak
+   peduli field ini dikirim atau tidak
+b. ADA sebagai nullable/sometimes -- backend menerima jika dikirim
+   tapi tidak wajib
+c. ADA sebagai required -- backend MEWAJIBKAN field ini dikirim,
+   yang berarti JIKA frontend sudah terlanjur tidak mengirimnya
+   (kemungkinan karena sudah setengah diperbaiki), validasi akan
+   GAGAL karena field wajib ini hilang
+
+Tunjukkan ISI PERSIS bagian rules() yang relevan.
+
+LANGKAH 4 -- CEK KEMBALI CATATAN_INVENTORY.md
+Baca ulang bagian dokumentasi backend yang menjelaskan "Langkah 10
+-- Hapus tampilan stock dari form Product" (atau bagian serupa).
+Bandingkan dengan temuan Langkah 2 dan 3 -- apakah instruksi itu
+BENAR-BENAR sudah dijalankan sepenuhnya di KEDUA sisi (frontend
+DAN backend), atau ternyata hanya sebagian yang sempat diubah?
+
+LANGKAH 5 -- SIMPULKAN AKAR MASALAH
+Berdasarkan Langkah 1-4, tentukan dengan JELAS akar masalah
+sebenarnya. Kemungkinan yang perlu dipertimbangkan (JANGAN
+diasumsikan, buktikan dari hasil diagnosa di atas):
+- Field stock masih ada di frontend TAPI backend sudah tidak
+  mengharapkannya -> ini seharusnya TIDAK menyebabkan submit gagal
+  (field ekstra biasanya diabaikan Laravel kecuali ada validasi
+  ketat), kemungkinan penyebab submit gagal ada di tempat LAIN
+- Field required LAIN (bukan stock) yang tidak terisi dengan benar
+  oleh form, sehingga validasi gagal di field yang berbeda dari
+  dugaan
+- Error di sisi upload gambar atau format data varian (JSON
+  encoding array variants yang salah bentuk saat dikirim)
+- Masalah CSRF token, session, atau middleware yang menolak
+  request sebelum sampai ke validasi
+LAPORKAN kesimpulan diagnosa ini dengan jelas SEBELUM melakukan
+perbaikan apapun.
+
+====================================================================
+LANGKAH PERBAIKAN -- LAKUKAN SETELAH DIAGNOSA SELESAI DAN AKAR
+MASALAH JELAS
+====================================================================
+
+PERBAIKAN 1 -- HAPUS FIELD STOCK DARI FORM PRODUK (FRONTEND)
+Di file yang ditemukan Langkah 2, HAPUS SEPENUHNYA:
+- Field stock dari state useForm()
+- Input/kolom "STOK" dari tampilan tabel varian (JSX)
+- Header kolom "STOK" di baris judul tabel varian
+- Referensi stock lain (validasi frontend, dst) yang berkaitan
+Pastikan struktur tabel varian yang tersisa HANYA menampilkan
+kolom: SKU, Harga, Harga Coret (opsional), Hapus -- sesuai
+tampilan yang seharusnya (rujuk ke referensi tampilan Tambah Produk
+yang sudah ada, kolom STOK dihilangkan dari situ, kolom lain tetap).
+
+PERBAIKAN 2 -- PERBAIKI AKAR MASALAH SUBMIT GAGAL
+Berdasarkan kesimpulan Langkah 5, perbaiki BAGIAN YANG SEBENARNYA
+BERMASALAH -- ini bisa jadi salah satu atau kombinasi dari:
+- Menyesuaikan validasi StoreProductRequest.php (dan
+  UpdateProductRequest.php) supaya konsisten dengan data yang
+  BENAR-BENAR dikirim form setelah Perbaikan 1
+- Memperbaiki cara frontend mengirim data varian (format array/
+  JSON yang benar untuk multipart/form-data jika ada gambar
+  disertakan dalam request yang sama)
+- Menampilkan pesan error dari backend dengan jelas di form
+  (errors.name, errors['variants.0.sku'], dst) SUPAYA ke depannya
+  jika ada kegagalan validasi, admin BISA MELIHAT pesan errornya
+  alih-alih form terlihat "tidak terjadi apa-apa" -- ini PENTING
+  ditambahkan terlepas dari apa akar masalah utamanya, karena form
+  yang gagal diam-diam tanpa feedback adalah masalah UX yang harus
+  diperbaiki juga
+
+PERBAIKAN 3 -- VERIFIKASI PERBAIKAN DENGAN UJI COBA NYATA
+Setelah Perbaikan 1 dan 2 selesai:
+1. Buka halaman Tambah Produk, PASTIKAN kolom STOK sudah tidak
+   muncul lagi
+2. Isi form lengkap dengan data contoh (nama, minimal 1 gambar,
+   minimal 1 varian dengan SKU dan harga), klik Simpan Produk
+3. VERIFIKASI produk BENAR-BENAR tersimpan -- cek redirect ke
+   halaman daftar produk berhasil, DAN cek lewat
+   php artisan tinker -> Product::latest()->first() untuk
+   konfirmasi data benar-benar masuk database
+4. VERIFIKASI juga bahwa produk baru ini otomatis punya baris
+   inventory yang sesuai (cek Inventory::where('variant_id', ...)
+   -- apakah baris inventory OTOMATIS dibuat saat varian baru
+   dibuat, dengan quantity_on_hand default 0? Jika belum ada logic
+   ini, TAMBAHKAN di CreateProductAction.php supaya SETIAP varian
+   baru otomatis punya baris inventory di gudang default dengan
+   stok 0, supaya varian baru langsung muncul di halaman Inventory
+   dan admin tidak perlu langkah manual tambahan)
+5. Coba juga alur EDIT produk yang sudah ada (termasuk 2 produk
+   dummy "Produk terhapus" yang terlihat di halaman Inventory
+   sebelumnya -- ini kemungkinan produk yang sempat dibuat untuk
+   testing lalu dihapus dari Catalog TAPI baris inventory-nya
+   TIDAK IKUT TERHAPUS, sehingga masih muncul di halaman Inventory
+   sebagai data yatim. CEK dan PERBAIKI: apakah DeleteProductAction
+   yang sudah ada menghapus juga baris inventory terkait saat
+   produk/varian dihapus? Jika belum, TAMBAHKAN logic itu, dan
+   BERSIHKAN data yatim yang sudah terlanjur ada sekarang lewat
+   Tinker atau seeder pembersihan sekali jalan)
+6. LAPORKAN hasil keenam pengecekan ini dengan jelas
+
+====================================================================
+YANG TIDAK BOLEH DILAKUKAN
+====================================================================
+
+- JANGAN langsung menghapus field stock dari frontend tanpa
+  menyelesaikan Langkah Diagnosa 1-5 dulu -- kita perlu tahu APAKAH
+  ini benar-benar akar masalah submit gagal atau cuma masalah
+  terpisah yang kebetulan terlihat bersamaan.
+- JANGAN mengubah struktur tabel warehouses/inventories yang sudah
+  dibangun sebelumnya.
+- JANGAN menghapus data inventory yang PUNYA quantity_on_hand lebih
+  dari 0 saat membersihkan data yatim di Perbaikan 3 langkah 5 --
+  HANYA hapus baris inventory yang variant_id-nya BENAR-BENAR sudah
+  tidak ada lagi product_variant yang terhubung (produk yang sudah
+  dihapus), verifikasi dulu sebelum menghapus apapun.
+- JANGAN mengubah logic AdjustStockAction atau halaman Inventory
+  yang sudah berfungsi baik -- fokus HANYA pada form Product dan
+  koneksinya ke Inventory saat produk baru dibuat/dihapus.
+
+====================================================================
+WAJIB: UPDATE DOKUMENTASI SETELAH SELESAI
+====================================================================
+
+Update file CATATAN_CRUD_PRODUCT.md yang sudah ada (JANGAN buat
+file baru, tambahkan section baru di paling bawah dengan heading
+"## Diagnosa dan Perbaikan: Field Stock & Submit Gagal"), berisi:
+
+1. Hasil Langkah Diagnosa 1-5 (apa akar masalah sebenarnya,
+   dibuktikan dengan bukti konkret dari console/network/kode, bukan
+   dugaan).
+2. Daftar file yang diperbaiki dan penjelasan singkat perubahannya.
+3. Konfirmasi bahwa varian baru sekarang otomatis punya baris
+   inventory (Perbaikan 3 langkah 4).
+4. Konfirmasi bahwa produk yang dihapus sekarang juga menghapus
+   baris inventory terkait (Perbaikan 3 langkah 5), dan berapa
+   baris data yatim yang dibersihkan dari kondisi sebelumnya.
+5. Hasil uji coba akhir (submit produk baru berhasil, pesan error
+   sekarang terlihat jelas jika validasi gagal).
+
+Tulis dalam Bahasa Indonesia, jelas dan tidak terlalu teknis.
+
+====================================================================
+ATURAN TAMBAHAN
+====================================================================
+
+- Kerjakan PERSIS sesuai urutan: Langkah Diagnosa 1-5 dulu (jangan
+  lompat), laporkan kesimpulan akar masalah dengan jelas, BARU
+  lanjut ke Perbaikan 1-3.
+- Di titik manapun jika hasil diagnosa TIDAK sesuai dengan dugaan
+  awal di prompt ini (ternyata penyebabnya sesuatu yang sama sekali
+  berbeda), STOP dan jelaskan temuan sebenarnya, jangan memaksakan
+  perbaikan berdasarkan dugaan yang sudah terbukti salah.
+- Tampilkan ringkasan tiap bagian selesai, supaya bisa dicek dan
+  commit git bertahap.
+====================================================================

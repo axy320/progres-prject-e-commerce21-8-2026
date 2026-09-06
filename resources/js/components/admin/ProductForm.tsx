@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useForm } from '@inertiajs/react';
+import { useForm, usePage } from '@inertiajs/react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Chip } from '@/components/ui/Chip';
@@ -27,7 +27,6 @@ export interface ExistingVariant {
     sku: string;
     price: number;
     compare_at_price?: number | null;
-    stock?: number | null;
 }
 
 export interface ProductInitialData {
@@ -59,7 +58,6 @@ interface VariantRow {
     sku: string;
     price: string;
     compareAtPrice: string;
-    stock: string;
 }
 
 const STATUS_OPTIONS = [
@@ -69,6 +67,9 @@ const STATUS_OPTIONS = [
 
 export default function ProductForm({ mode, categories, brands, initialProduct }: ProductFormProps) {
     const isEdit = mode === 'edit';
+
+    const { errors: page } = usePage().props as { errors?: Record<string, unknown> };
+    const pageErrors = page ?? {};
 
     const form = useForm<{
         _method?: string;
@@ -84,7 +85,7 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
         new_images: File[];
         delete_image_ids: (number | string)[];
         primary_ref: string;
-        variants: { id?: number | string; sku: string; price: string; compare_at_price: string; stock: string }[];
+        variants: { id?: number | string; sku: string; price: string; compare_at_price: string }[];
         delete_variant_ids: (number | string)[];
     }>({
         _method: isEdit ? 'PUT' : undefined,
@@ -199,17 +200,16 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
                 sku: v.sku,
                 price: String(v.price ?? ''),
                 compareAtPrice: v.compare_at_price != null ? String(v.compare_at_price) : '',
-                stock: v.stock != null ? String(v.stock) : '0',
             }));
         }
-        return [{ key: 0, sku: '', price: '', compareAtPrice: '', stock: '0' }];
+        return [{ key: 0, sku: '', price: '', compareAtPrice: '' }];
     });
     const variantKeyCounter = useRef(variants.length);
     const [removedVariantIds, setRemovedVariantIds] = useState<(number | string)[]>([]);
 
     const addVariantRow = () => {
         const key = variantKeyCounter.current++;
-        setVariants((prev) => [...prev, { key, sku: '', price: '', compareAtPrice: '', stock: '0' }]);
+        setVariants((prev) => [...prev, { key, sku: '', price: '', compareAtPrice: '' }]);
     };
 
     const removeVariantRow = (rowKey: number) => {
@@ -281,7 +281,6 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
                     sku: v.sku.trim(),
                     price: v.price,
                     compare_at_price: v.compareAtPrice,
-                    stock: v.stock,
                 })),
                 delete_variant_ids: removedVariantIds,
             });
@@ -304,7 +303,6 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
                 sku: v.sku.trim(),
                 price: v.price,
                 compare_at_price: v.compareAtPrice,
-                stock: v.stock,
             })),
         }));
 
@@ -316,7 +314,15 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
 
     const getError = (key: string) => {
         const err = (form.errors as Record<string, string>)[key];
-        return err || undefined;
+        if (err) return err;
+        return getPageError(key);
+    };
+
+    const getPageError = (key: string) => {
+        const err = pageErrors[key];
+        if (typeof err === 'string' && err) return err;
+        if (Array.isArray(err)) return err[0] as string | undefined;
+        return undefined;
     };
 
     const getVariantError = (index: number, field: 'sku' | 'price') => {
@@ -325,8 +331,28 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
 
     const tokenTail = mode === 'create' ? 'Simpan Produk' : 'Simpan Perubahan';
 
+    // Kumpulan error backend yang belum ditampilkan inline, supaya tiap kegagalan
+    // validasi tetap terlihat jelas (tidak "diam tanpa feedback").
+    const formErrors = [
+        ...Object.values(form.errors as Partial<Record<string, string>>),
+        ...Object.values(pageErrors).map((v) => (typeof v === 'string' ? v : Array.isArray(v) ? v[0] : null)),
+    ].filter((m): m is string => Boolean(m));
+
     return (
         <form onSubmit={handleSubmit} noValidate>
+            {formErrors.length > 0 && (
+                <div className="mb-6 rounded-xl border border-vgs-danger/40 bg-vgs-danger/10 px-4 py-3">
+                    <p className="text-sm font-semibold text-vgs-danger">
+                        Produk tidak dapat disimpan. Perbaiki isian berikut lalu coba lagi:
+                    </p>
+                    <ul className="mt-1 list-disc list-inside text-xs text-vgs-danger">
+                        {formErrors.map((msg, i) => (
+                            <li key={`${i}-${msg}`}>{msg}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
             {/* Informasi Dasar */}
             <section className="rounded-2xl bg-vgs-black-surface border border-vgs-gray-border overflow-hidden">
                 <div className="px-6 py-4 border-b border-vgs-gray-border">
@@ -547,10 +573,9 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
                     )}
 
                     <div className="hidden sm:grid grid-cols-12 gap-3 text-[10px] font-mono uppercase tracking-widest text-vgs-silver-muted">
-                        <div className="col-span-3">SKU *</div>
+                        <div className="col-span-4">SKU *</div>
                         <div className="col-span-3">Harga *</div>
-                        <div className="col-span-2">Harga Coret (Opsional)</div>
-                        <div className="col-span-2">Stok</div>
+                        <div className="col-span-3">Harga Coret (Opsional)</div>
                         <div className="col-span-2 text-right">Hapus</div>
                     </div>
 
@@ -563,7 +588,7 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
                         );
                         return (
                             <div key={variant.key} className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
-                                <div className="col-span-6 sm:col-span-3">
+                                <div className="col-span-6 sm:col-span-4">
                                     <Input
                                         label="SKU"
                                         required
@@ -588,7 +613,7 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
                                         )}
                                     />
                                 </div>
-                                <div className="col-span-6 sm:col-span-2">
+                                <div className="col-span-6 sm:col-span-3">
                                     <Input
                                         label="Harga Coret"
                                         type="number"
@@ -596,16 +621,6 @@ export default function ProductForm({ mode, categories, brands, initialProduct }
                                         placeholder="200000"
                                         value={variant.compareAtPrice}
                                         onChange={(e) => updateVariant(variant.key, 'compareAtPrice', e.target.value)}
-                                    />
-                                </div>
-                                <div className="col-span-6 sm:col-span-2">
-                                    <Input
-                                        label="Stok"
-                                        type="number"
-                                        min={0}
-                                        placeholder="0"
-                                        value={variant.stock}
-                                        onChange={(e) => updateVariant(variant.key, 'stock', e.target.value)}
                                     />
                                 </div>
                                 <div className="col-span-6 sm:col-span-2 flex sm:justify-end items-end">

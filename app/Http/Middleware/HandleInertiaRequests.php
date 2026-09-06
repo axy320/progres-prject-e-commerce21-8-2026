@@ -2,24 +2,22 @@
 
 namespace App\Http\Middleware;
 
-use Closure;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
-class HandleInertiaRequests
+class HandleInertiaRequests extends \Inertia\Middleware
 {
-    public function handle(Request $request, Closure $next): Response
+    public function share(Request $request): array
     {
-        Inertia::share([
+        return [
+            ...parent::share($request),
             'auth' => [
                 'user' => fn () => $request->user()?->load('roles'),
             ],
             'flash' => fn () => [
                 'success' => $request->session()->get('success'),
             ],
-        ]);
-
-        return $next($request);
+        ];
     }
 }

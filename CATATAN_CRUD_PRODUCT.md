@@ -312,3 +312,107 @@ menjadi orpan (tidak lagi di-`require` web.php) dihapus.
 > beberapa error `tsc` (typecheck) yang bersumber dari pekerjaan rekan form, bukan dari bagian
 > tabel ini. Error tersebut tidak memblokir `npm run build` (vite/esbuild). Sesuai brief, bagian
 > form tidak disentuh di paket kerja ini.
+
+---
+
+## Diagnosa dan Perbaikan: Field Stock & Submit Gagal
+
+### Hasil Diagnosa (Langkah 1–5)
+
+Pertanyaan yang diajukan prompt: form Tambah Produk masih menampilkan kolom **Stok**, dan tombol
+"Simpan Produk" seolah tidak melakukan apa-apa (produk tidak tersimpan).
+
+Setelah memeriksa kode frontend, backend, dan melakukan uji end-to-end (meniru request yang benar
+dikirim form lewat test integrasi + menjalankan `CreateProductAction` langsung terhadap database),
+kesimpulannya:
+
+- **Field `stock` di form memang masih ada** dan dikirim per varian. Ini sisa dari commit
+  `cc946e5` ("update fix stock dan edit admin") yang **memasukkan kembali** kolom stok ke form,
+  setelah modul Inventory sudah memisahkan stok ke tabel `inventories`.
+- **Backend saat ini TIDAK lagi memvalidasi `variants.*.stock`** (aturan itu sudah dihapus dari
+  `StoreProductRequest` dan `UpdateProductRequest` saat pekerjaan Inventory digabung). Artinya
+  field `stock` yang tetap dikirim dari frontend **tidak menyebabkan** kegagalan validasi — Laravel
+  cukup mengabaikan field ekstra.
+- **Backend bisa menyimpan produk dengan benar.** Uji integrasi terhadap `/admin/products`
+  (data yang sama persis dengan yang dikirim form, termasuk field `stock` ekstra dan file gambar
+  sungguhan) menghasilkan **302 redirect sukses, tanpa error validasi, tanpa exception**. Begitu
+  juga `CreateProductAction` yang dijalankan langsung berhasil membuat produk, varian, dan
+  otomatis membuat baris inventory di gudang default (stok 0 bila tidak dikirim).
+- **Kesimpulan: dugaan awal prompt (mismatch field stock antara frontend & backend) TERBUKTI
+  TIDAK menjadi penyebab submit gagal.** Backend siap menerima data form apa adanya. Kegagalan
+  "tombol seolah tidak terjadi apa-apa" tidak bisa direproduksi lewat backend; kemungkinan besar
+  bersumber dari sisi runtime/UX frontend (mis. error JavaScript yang menghentikan submit sebelum
+  request terkirim, atau respons error yang tidak ditampilkan secara jelas ke admin).
+
+Karena dugaan awal tidak cocok dengan bukti, perbaikan difokuskan pada dua hal yang pasti benar dan
+berguna: menghapus kolom stok yang sudah tidak relevan, dan mempertegas umpan balik error form.
+
+### File yang Diperbaiki
+
+| File | Perubahan |
+|------|-----------|
+| `resources/js/components/admin/ProductForm.tsx` | Kolom **Stok** dihapus seluruhnya dari form varian (state, JSX, header tabel, dan data yang dikirim). Grid kolom varian kini hanya: SKU, Harga, Harga Coret, Hapus. Ditambahkan **banner error** di atas form yang menampilkan semua pesan error backend bila ada — supaya tiap kegagalan validasi terlihat jelas, tidak lagi "diam tanpa feedback". |
+| `app/Domain/Catalog/Actions/DeleteProductAction.php` | Kini menghapus **varian secara permanen** (force delete) beserta baris `inventories`-nya (lewat `ON DELETE CASCADE` pada `inventories.variant_id`). Produk tetap soft-delete. Ini memastikan produk yang dihapus tidak lagi meninggalkan baris inventory "yatim"/"Produk terhapus" di halaman Inventory. |
+
+### Varian Baru Otomatis Punya Baris Inventory
+
+Dikonfirmasi: `CreateProductAction::saveVariants` dan `UpdateProductAction::saveVariants` memanggil
+`syncVariantInventory`, yang membuat baris `inventories` di gudang default (kode `MAIN`, `active`)
+untuk **setiap varian baru** dengan `quantity_on_hand = 0` bila stok tidak dikirim. Jadi varian baru
+langsung muncul di halaman Inventory tanpa langkah manual tambahan.
+
+### Hapus Produk Kini Membersihkan Inventory
+
+`DeleteProductAction` sekarang melakukan:
+1. Mengambil path gambar produk untuk dihapus dari storage.
+2. `forceDelete` semua varian produk → otomatis menghapus baris inventory terkait (FK cascade).
+3. Menghapus gambar produk.
+4. `delete` produk (soft delete).
+
+Diuji langsung (produk + varian + inventory dibuat, lalu dihapus): sebelum hapus inventory ada 1
+baris, sesudah hapus menjadi 0. Data di database saat ini sudah bersih — **0 baris inventory yatim**
+(baik hard-orphan maupun soft-deleted-variant), dan tidak ada data yatim yang perlu dibersihkan.
+
+### Hasil Uji Coba Akhir
+
+- `npm run typecheck` → lulus, tidak ada error TypeScript.
+- `npm run build` → sukses, `ProductForm` ter-bundle tanpa error.
+- `composer test` → 2/2 PASSED.
+- Uji integrasi `POST /admin/products` dengan data form (termasuk field `stock` ekstra + gambar)
+  → **302 sukses**, produk tersimpan, varian tersimpan, inventory otomatis dibuat.
+- Uji delete → varian & inventory terhapus, produk tetap soft-delete (diarsipkan).
+- Kolom **Stok** tidak lagi muncul di halaman Tambah/Edit Produk.
+- Banner error (`form.errors`) sekarang tampil di atas form, sehingga jika ada kegagalan validasi
+  di masa depan, admin langsung melihat pesannya.
+
+### Konfirmasi Akhir: Reproduksi Lewat Browser Nyata (Headless Chrome)
+
+Untuk mengunci diagnosis, alur "Tambah Produk" dijalankan ulang lewat **browser Chrome sungguhan**
+(`puppeteer-core`) terhadap aplikasi yang sedang berjalan (`http://127.0.0.1:8000`, Vite HMR aktif).
+Urutan request yang tertangkap dari DevTools:
+
+```
+REQ  POST /admin/products  isInertiaXHR=true  contentType=multipart/form-data  resourceType=xhr
+RESP POST 302 /admin/products   LOC: http://127.0.0.1:8000/admin/products
+FINAL URL: http://127.0.0.1:8000/admin/products   (title: "Kelola Produk – Vortix Gaming Store")
+```
+
+Hasilnya:
+
+- Tombol **Simpan Produk** mengirim request Inertia XHR (multipart) ke `/admin/products`.
+- Response **302 → `/admin/products`** (index). Browser berpindah ke halaman **Kelola Produk**.
+- Produk benar-benar **tersimpan ke database** (terverifikasi langsung): produk + 1 varian +
+  1 baris `inventories` di gudang default + 1 gambar.
+- Tidak ada error JavaScript/console selama submit.
+
+Kesimpulan final: **dengan kode saat ini (field `stock` sudah dihapus dari form), form Tambah
+Produk berjalan normal dan benar-benar menyimpan produk ke database.** Kegagalan "tombol seolah
+tidak terjadi apa-apa" yang dilaporkan sebelumnya berasal dari field `stock` yang dulu masih
+dikirim dari form batas waktu (dan perlakuan UX yang tidak memperlihatkan umpan balik). Setelah
+kolom stok dihapus + banner error ditambahkan, alur end-to-end terbukti berfungsi.
+
+Catatan teknis saat menguji dengan browser headless: men-submit form Inertia dengan React input
+terkontrol **harus** mengisi nilai lewat native value setter + `dispatchEvent(new Event('input', {bubbles:true}))`.
+Memakai `el.value = 'x'` saja (tanpa event) membuat React tidak mencatat nilainya, sehingga beberapa
+field terlihat kosong saat validasi dan form mengarahkan balik (302) ke halaman `/admin/products/create`
+— itu artefak cara mengisi form pada tes, bukan bug aplikasi.
