@@ -79,9 +79,14 @@ export default function Index() {
                             {products?.total ?? 0} produk di katalog.
                         </p>
                     </div>
-                    <Button href="/admin/products/create" variant="primary">
-                        + Tambah Produk Baru
-                    </Button>
+                    <div className="flex items-center gap-3">
+                        <Button href="/admin/categories" variant="secondary">
+                            Kelola Kategori
+                        </Button>
+                        <Button href="/admin/products/create" variant="primary">
+                            + Tambah Produk Baru
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="rounded-2xl bg-vgs-black-surface border border-vgs-gray-border overflow-hidden">

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\InventoryController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\WarehouseController;
@@ -13,6 +14,10 @@ Route::middleware(['auth', 'staff'])->prefix('admin')->name('admin.')->group(fun
     Route::resource('products', ProductController::class)
         ->except(['show'])
         ->names('products');
+
+    Route::resource('categories', CategoryController::class)
+        ->except(['create', 'show', 'edit'])
+        ->names('categories');
 
     // Inventory
     Route::get('inventory', [InventoryController::class, 'index'])
